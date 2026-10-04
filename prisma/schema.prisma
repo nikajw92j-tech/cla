@@ -1,0 +1,464 @@
+// Nexora Studio — data model
+// Local dev uses SQLite. For production switch provider to "postgresql"
+// (Supabase / Neon / RDS) and point DATABASE_URL at it — no other changes needed.
+// Status-like columns are plain strings validated in src/lib/catalog.ts so the
+// schema stays portable between providers.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  passwordHash   String
+  firstName      String
+  lastName       String
+  role           String    @default("CUSTOMER") // CUSTOMER | ADMIN
+  emailVerified  DateTime?
+  sessionVersion Int       @default(1) // bump to revoke all sessions
+  locale         String    @default("ka")
+  currency       String    @default("GEL")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  lastLoginAt    DateTime?
+
+  profile          Profile?
+  tokens           AuthToken[]
+  orders           Order[]
+  websites         Website[]
+  membership       ProMembership?
+  requests         ModificationRequest[]
+  threads          Thread[]
+  messages         Message[]
+  tickets          SupportTicket[]
+  ticketReplies    TicketReply[]
+  notifications    Notification[]
+  payments         Payment[]
+  invoices         Invoice[]
+  reviews          Review[]
+  files            FileUpload[]
+  activities       Activity[]
+  referralCode     ReferralCode?
+  referralsMade    Referral[]            @relation("Referrer")
+  referredBy       Referral?             @relation("Referred")
+  discountUses     DiscountRedemption[]
+}
+
+model Profile {
+  id                 String  @id @default(cuid())
+  userId             String  @unique
+  user               User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phone              String?
+  company            String?
+  country            String?
+  bio                String?
+  avatarFileId       String?
+  emailOnStatus      Boolean @default(true)
+  emailOnMessages    Boolean @default(true)
+  emailOnBilling     Boolean @default(true)
+  emailMarketing     Boolean @default(false)
+}
+
+model AuthToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String // VERIFY_EMAIL | RESET_PASSWORD
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, type])
+}
+
+model Package {
+  id           String   @id @default(cuid())
+  slug         String   @unique // essential | premium | ultimate
+  priceGel     Int
+  isPopular    Boolean  @default(false)
+  isActive     Boolean  @default(true)
+  sortOrder    Int      @default(0)
+  deliveryDays Int      @default(14)
+  // JSON: { en: { name, tagline, features: string[] }, ka: {...}, ru: {...} }
+  content      String
+  updatedAt    DateTime @updatedAt
+  orders       Order[]
+}
+
+model Order {
+  id               String    @id @default(cuid())
+  number           String    @unique
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  packageId        String?
+  package          Package?  @relation(fields: [packageId], references: [id])
+  // DRAFT | PENDING_PAYMENT | PAID | IN_PROGRESS | COMPLETED | CANCELLED
+  status           String    @default("DRAFT")
+  draftStep        Int       @default(1)
+  brandName        String?
+  websiteType      String?
+  industry         String?
+  description      String?
+  colors           String?
+  style            String?
+  pagesCount       Int?
+  functionality    String?
+  examples         String?
+  features         String    @default("[]") // JSON string[]
+  basePriceGel     Int       @default(0)
+  featuresPriceGel Int       @default(0)
+  discountGel      Int       @default(0)
+  totalGel         Int       @default(0)
+  discountCodeId   String?
+  discountCode     DiscountCode? @relation(fields: [discountCodeId], references: [id])
+  paymentMethod    String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  submittedAt      DateTime?
+
+  website  Website?
+  files    FileUpload[]
+  payments Payment[]
+  threads  Thread[]
+
+  @@index([userId, status])
+}
+
+model Website {
+  id                  String    @id @default(cuid())
+  userId              String
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderId             String?   @unique
+  order               Order?    @relation(fields: [orderId], references: [id])
+  name                String
+  url                 String?
+  // IN_DEVELOPMENT | LIVE | MAINTENANCE | PAUSED
+  status              String    @default("IN_DEVELOPMENT")
+  // STARTED | DESIGN | DEVELOPMENT | TESTING | REVIEW | COMPLETED
+  stage               String    @default("STARTED")
+  progress            Int       @default(20)
+  estimatedCompletion DateTime?
+  previewUrl          String?
+  managed             Boolean   @default(false)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  requests   ModificationRequest[]
+  activities Activity[]
+  files      FileUpload[]
+  reviews    Review[]
+  threads    Thread[]
+
+  @@index([userId])
+}
+
+model Activity {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  websiteId String?
+  website   Website? @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  kind      String // translation key under activity.*
+  params    String   @default("{}")
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model ProMembership {
+  id               String    @id @default(cuid())
+  userId           String    @unique
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status           String    @default("ACTIVE") // ACTIVE | CANCELLED | EXPIRED
+  freeModsTotal    Int       @default(5)
+  freeModsUsed     Int       @default(0)
+  priceGel         Int
+  startedAt        DateTime  @default(now())
+  currentPeriodEnd DateTime
+  cancelledAt      DateTime?
+}
+
+model ModificationRequest {
+  id             String    @id @default(cuid())
+  number         String    @unique
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  websiteId      String?
+  website        Website?  @relation(fields: [websiteId], references: [id], onDelete: SetNull)
+  websiteUrl     String
+  title          String
+  description    String
+  category       String
+  priority       String    @default("NORMAL") // LOW | NORMAL | HIGH | URGENT
+  notes          String?
+  // SUBMITTED | REVIEWING | APPROVED | IN_PROGRESS | WAITING_CUSTOMER | COMPLETED | CANCELLED
+  status         String    @default("SUBMITTED")
+  priceGel       Int
+  discountGel    Int       @default(0)
+  finalGel       Int
+  usedFreeCredit Boolean   @default(false)
+  wasPro         Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  events   RequestEvent[]
+  files    FileUpload[]
+  payments Payment[]
+  threads  Thread[]
+
+  @@index([userId, status])
+}
+
+model RequestEvent {
+  id        String              @id @default(cuid())
+  requestId String
+  request   ModificationRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  status    String
+  note      String?
+  createdAt DateTime            @default(now())
+}
+
+model Thread {
+  id            String               @id @default(cuid())
+  userId        String
+  user          User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject       String
+  websiteId     String?
+  website       Website?             @relation(fields: [websiteId], references: [id], onDelete: SetNull)
+  orderId       String?
+  order         Order?               @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  requestId     String?
+  request       ModificationRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  unreadByUser  Int                  @default(0)
+  unreadByAdmin Int                  @default(0)
+  lastMessageAt DateTime             @default(now())
+  createdAt     DateTime             @default(now())
+  messages      Message[]
+
+  @@index([userId, lastMessageAt])
+}
+
+model Message {
+  id        String       @id @default(cuid())
+  threadId  String
+  thread    Thread       @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  senderId  String
+  sender    User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  body      String
+  fromStaff Boolean      @default(false)
+  createdAt DateTime     @default(now())
+  files     FileUpload[]
+
+  @@index([threadId, createdAt])
+}
+
+model SupportTicket {
+  id        String        @id @default(cuid())
+  number    String        @unique
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject   String
+  category  String // GENERAL | WEBSITE_PROBLEM | BILLING | MODIFICATION | TECHNICAL
+  status    String        @default("OPEN") // OPEN | ANSWERED | AWAITING_STAFF | RESOLVED | CLOSED
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  replies   TicketReply[]
+}
+
+model TicketReply {
+  id        String        @id @default(cuid())
+  ticketId  String
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body      String
+  fromStaff Boolean       @default(false)
+  createdAt DateTime      @default(now())
+  files     FileUpload[]
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String // translation key under notif.*
+  params    String    @default("{}")
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+}
+
+model Payment {
+  id          String               @id @default(cuid())
+  userId      String
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose     String // ORDER | MODIFICATION | PRO
+  orderId     String?
+  order       Order?               @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  requestId   String?
+  request     ModificationRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  amountGel   Int
+  currency    String               @default("GEL")
+  rate        Float                @default(1)
+  method      String // CARD | BANK_TRANSFER | FREE
+  status      String               @default("PENDING") // PENDING | SUCCEEDED | FAILED | REFUNDED
+  providerRef String?
+  createdAt   DateTime             @default(now())
+  paidAt      DateTime?
+  invoice     Invoice?
+}
+
+model Invoice {
+  id          String   @id @default(cuid())
+  number      String   @unique
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paymentId   String   @unique
+  payment     Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  items       String // JSON [{ label, amountGel }]
+  subtotalGel Int
+  discountGel Int      @default(0)
+  totalGel    Int
+  currency    String   @default("GEL")
+  rate        Float    @default(1)
+  status      String   @default("ISSUED") // ISSUED | PAID | VOID
+  issuedAt    DateTime @default(now())
+}
+
+model DiscountCode {
+  id          String               @id @default(cuid())
+  code        String               @unique
+  description String?
+  type        String // PERCENT | FIXED
+  value       Int // percent (1-100) or GEL amount
+  appliesTo   String               @default("ALL") // ALL | ORDER | MODIFICATION | PRO
+  packageSlug String? // restrict to a package
+  proOnly     Boolean              @default(false)
+  startsAt    DateTime?
+  endsAt      DateTime?
+  maxUses     Int?
+  usedCount   Int                  @default(0)
+  active      Boolean              @default(true)
+  createdAt   DateTime             @default(now())
+  orders      Order[]
+  redemptions DiscountRedemption[]
+}
+
+model DiscountRedemption {
+  id         String       @id @default(cuid())
+  codeId     String
+  code       DiscountCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amountGel  Int
+  createdAt  DateTime     @default(now())
+}
+
+model Review {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  websiteId   String?
+  website     Website? @relation(fields: [websiteId], references: [id], onDelete: SetNull)
+  displayName String
+  rating      Int
+  body        String
+  projectType String
+  approved    Boolean  @default(false)
+  featured    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
+
+model PortfolioProject {
+  id           String   @id @default(cuid())
+  title        String
+  category     String
+  description  String
+  technologies String // comma separated
+  desktopImage String?
+  mobileImage  String?
+  liveUrl      String?
+  accent       String   @default("#6d5dfc")
+  sortOrder    Int      @default(0)
+  published    Boolean  @default(true)
+  createdAt    DateTime @default(now())
+}
+
+model ReferralCode {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+model Referral {
+  id             String   @id @default(cuid())
+  referrerId     String
+  referrer       User     @relation("Referrer", fields: [referrerId], references: [id], onDelete: Cascade)
+  referredUserId String   @unique
+  referredUser   User     @relation("Referred", fields: [referredUserId], references: [id], onDelete: Cascade)
+  status         String   @default("PENDING") // PENDING | QUALIFIED
+  rewardGel      Int      @default(0)
+  createdAt      DateTime @default(now())
+  qualifiedAt    DateTime?
+}
+
+model FileUpload {
+  id            String               @id @default(cuid())
+  userId        String
+  user          User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  originalName  String
+  storedName    String               @unique
+  mimeType      String
+  size          Int
+  purpose       String // ORDER | REQUEST | MESSAGE | AVATAR | PREVIEW | TICKET
+  orderId       String?
+  order         Order?               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  requestId     String?
+  request       ModificationRequest? @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  messageId     String?
+  message       Message?             @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  websiteId     String?
+  website       Website?             @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  ticketReplyId String?
+  ticketReply   TicketReply?         @relation(fields: [ticketReplyId], references: [id], onDelete: Cascade)
+  createdAt     DateTime             @default(now())
+}
+
+model Lead {
+  id          String   @id @default(cuid())
+  name        String
+  email       String
+  websiteType String
+  features    String // JSON
+  pages       Int
+  timeline    String
+  recommended String
+  estimateGel Int
+  createdAt   DateTime @default(now())
+}
+
+model Setting {
+  key       String   @id
+  value     String // JSON
+  updatedAt DateTime @updatedAt
+}
+
+model TranslationOverride {
+  id     String @id @default(cuid())
+  locale String
+  key    String // dotted path, e.g. "home.hero.title"
+  value  String
+
+  @@unique([locale, key])
+}
