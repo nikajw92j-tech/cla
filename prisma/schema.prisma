@@ -1,6 +1,6 @@
 // Nexora Studio — data model
-// Local dev uses SQLite. For production switch provider to "postgresql"
-// (Supabase / Neon / RDS) and point DATABASE_URL at it — no other changes needed.
+// PostgreSQL everywhere (Neon / Supabase / Vercel Postgres / local `npx prisma dev`).
+// DATABASE_URL must point at a Postgres database.
 // Status-like columns are plain strings validated in src/lib/catalog.ts so the
 // schema stays portable between providers.
 
@@ -9,7 +9,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -432,7 +432,16 @@ model FileUpload {
   website       Website?             @relation(fields: [websiteId], references: [id], onDelete: Cascade)
   ticketReplyId String?
   ticketReply   TicketReply?         @relation(fields: [ticketReplyId], references: [id], onDelete: Cascade)
+  blob          FileBlob?
   createdAt     DateTime             @default(now())
+}
+
+// File contents live in their own table so listing FileUpload rows never loads the bytes.
+// Stored in the database because serverless hosts (Vercel) have no persistent disk.
+model FileBlob {
+  fileId String     @id
+  file   FileUpload @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  data   Bytes
 }
 
 model Lead {

@@ -6,7 +6,7 @@ import { fail, formObject, zodFail, type ActionResult } from "@/lib/action";
 import { requireUser, destroySession, isProActive } from "@/lib/auth/session";
 import { changePasswordSchema, profileSchema, reviewSchema } from "@/lib/validation";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
-import { filesFrom, saveFiles, validateFiles, deleteStoredFile, UploadError } from "@/lib/uploads";
+import { filesFrom, saveFiles, validateFiles, UploadError } from "@/lib/uploads";
 import { createPayment, confirmPayment, failPayment, paymentProvider } from "@/lib/payments";
 import { getCurrency } from "@/lib/prefs";
 import { getSettings } from "@/lib/settings";
@@ -48,11 +48,7 @@ export async function uploadAvatarAction(fd: FormData): Promise<ActionResult> {
     const oldId = user.profile?.avatarFileId;
     await db.profile.upsert({ where: { userId: user.id }, create: { userId: user.id, avatarFileId: saved.id }, update: { avatarFileId: saved.id } });
     if (oldId) {
-      const old = await db.fileUpload.findUnique({ where: { id: oldId } });
-      if (old) {
-        await db.fileUpload.delete({ where: { id: old.id } });
-        await deleteStoredFile(old.storedName);
-      }
+      await db.fileUpload.deleteMany({ where: { id: oldId } });
     }
     return { ok: true, message: "success.saved" };
   } catch (e) {

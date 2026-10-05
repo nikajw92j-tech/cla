@@ -38,12 +38,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     file.ticketReply?.ticket.userId === user.id;
   if (!allowed) return new NextResponse("Not found", { status: 404 });
 
-  let data: Buffer;
-  try {
-    data = await readStoredFile(file.storedName);
-  } catch {
-    return new NextResponse("Not found", { status: 404 });
-  }
+  const data = await readStoredFile(file.id);
+  if (!data) return new NextResponse("Not found", { status: 404 });
   const inline = file.mimeType.startsWith("image/") || file.mimeType === "application/pdf";
   const download = new URL(req.url).searchParams.has("download");
   return new NextResponse(new Uint8Array(data), {

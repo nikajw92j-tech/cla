@@ -1,14 +1,11 @@
 import "server-only";
-import { mkdir, writeFile, readFile, unlink } from "fs/promises";
-import path from "path";
 import { randomBytes } from "crypto";
 import { db } from "@/lib/db";
 
-export const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 export const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
-// Extension -> stored MIME type. Files live outside /public with random names
-// and are only served through the authorized /api/files/[id] route.
+// Extension -> stored MIME type. File bytes live in the database (FileBlob) and are
+// only served through the authorized /api/files/[id] route.
 const ALLOWED: Record<string, string> = {
   png: "image/png",
   jpg: "image/jpeg",
@@ -70,7 +67,6 @@ export function validateFiles(files: File[], max: number, imagesOnly = false): s
 export class UploadError extends Error {}
 
 export async function saveFiles(userId: string, files: File[], purpose: UploadPurpose, links: Links = {}) {
-  await mkdir(UPLOAD_DIR, { recursive: true });
   const prepared = [];
   for (const f of files) {
     const ext = f.name.split(".").pop()!.toLowerCase();
@@ -81,7 +77,6 @@ export async function saveFiles(userId: string, files: File[], purpose: UploadPu
   const saved = [];
   for (const { f, ext, buf } of prepared) {
     const storedName = `${randomBytes(16).toString("hex")}.${ext}`;
-    await writeFile(path.join(UPLOAD_DIR, storedName), buf);
     saved.push(
       await db.fileUpload.create({
         data: {
@@ -92,6 +87,7 @@ export async function saveFiles(userId: string, files: File[], purpose: UploadPu
           mimeType: ALLOWED[ext],
           size: f.size,
           ...links,
+          blob: { create: { data: buf } },
         },
       }),
     );
@@ -99,14 +95,8 @@ export async function saveFiles(userId: string, files: File[], purpose: UploadPu
   return saved;
 }
 
-const SAFE_NAME = /^[a-f0-9]{32}\.[a-z]+$/;
-
-export async function readStoredFile(storedName: string) {
-  if (!SAFE_NAME.test(storedName)) throw new Error("bad name");
-  return readFile(path.join(UPLOAD_DIR, storedName));
-}
-
-export async function deleteStoredFile(storedName: string) {
-  if (!SAFE_NAME.test(storedName)) return;
-  await unlink(path.join(UPLOAD_DIR, storedName)).catch(() => {});
+/** File bytes, or null if missing. Deleting the FileUpload row cascades to its blob. */
+export async function readStoredFile(fileId: string) {
+  const blob = await db.fileBlob.findUnique({ where: { fileId } });
+  return blob ? Buffer.from(blob.data) : null;
 }

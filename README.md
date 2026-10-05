@@ -9,8 +9,8 @@ requests, track projects live and talk to the team. It also includes a separate 
 
 ```bash
 npm install
-cp .env.example .env        # then set AUTH_SECRET (see below)
-npm run setup               # creates the SQLite DB and seeds demo data
+cp .env.example .env        # then set DATABASE_URL (Postgres) and AUTH_SECRET (see below)
+npm run setup               # creates the tables and seeds demo data
 npm run dev                 # http://localhost:3000
 ```
 
@@ -73,15 +73,19 @@ Pro renewals are currently one paid 30-day period per checkout. Recurring billin
 - Reset and verification tokens are single-use, expire, and are stored only as SHA-256 hashes.
 - Security headers (HSTS, frame-deny, nosniff, referrer and permissions policies) are set in `next.config.ts`.
 
-## Production deployment
+## Production deployment (Vercel)
 
-1. **Database:** set `provider = "postgresql"` in `prisma/schema.prisma` and point `DATABASE_URL` at Postgres
-   (Supabase, Neon, RDS…). Then run `npx prisma db push` (or adopt `prisma migrate`) and `npm run db:seed`.
-2. **Secrets:** set `AUTH_SECRET`, `APP_URL`, the SMTP settings, `ADMIN_EMAIL` and `ADMIN_PASSWORD`. Change the admin password after the first login.
-3. **Uploads:** files go to `./uploads`. On serverless or multi-instance hosting, swap `src/lib/uploads.ts` for
-   object storage (S3, R2, Supabase Storage). The interface is three functions.
-4. **Rate limiting** is in-memory (per instance). With several instances, back `src/lib/rate-limit.ts` with Redis or Upstash.
-5. Run `npm run build && npm start`.
+1. **Database:** create a Postgres database (Neon, Supabase or Vercel → Storage → Postgres) and copy its connection string.
+2. **Create the tables once**, from your machine, with `DATABASE_URL` in `.env` pointing at that database:
+   `npx prisma db push` then `npm run db:seed`.
+3. **Vercel → Project → Settings → Environment Variables:** `DATABASE_URL`, `AUTH_SECRET` (≥ 32 chars),
+   `APP_URL` (your real domain), and optionally the SMTP settings. Change the admin password after the first login.
+4. Import the GitHub repo in Vercel and deploy. The build command (`prisma generate && next build`) is already set.
+
+Notes:
+- **Uploads** are stored in the database (`FileBlob` table), so they work on serverless hosting with no extra setup.
+  Vercel limits a request body to 4.5 MB, so a single upload request above that size is rejected there.
+- **Rate limiting** is in-memory (per instance). With several instances, back `src/lib/rate-limit.ts` with Redis or Upstash.
 
 ## Scripts
 `dev` · `build` · `start` · `typecheck` · `db:push` · `db:seed` · `db:reset` (destroys data) · `setup`

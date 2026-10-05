@@ -8,7 +8,7 @@ import { orderBriefSchema } from "@/lib/validation";
 import { FEATURES, PACKAGE_SLUGS, STYLES, WEBSITE_TYPES, isOneOf } from "@/lib/catalog";
 import { quoteOrder, type OrderQuote } from "@/lib/pricing";
 import { createPayment, confirmPayment, paymentProvider } from "@/lib/payments";
-import { filesFrom, saveFiles, validateFiles, deleteStoredFile, UploadError } from "@/lib/uploads";
+import { filesFrom, saveFiles, validateFiles, UploadError } from "@/lib/uploads";
 import { notify, logActivity } from "@/lib/notify";
 import { getCurrency } from "@/lib/prefs";
 import { getSettings } from "@/lib/settings";
@@ -94,7 +94,6 @@ export async function removeOrderFileAction(orderId: string, fileId: string): Pr
   const file = await db.fileUpload.findFirst({ where: { id: fileId, orderId, userId: user.id } });
   if (!file) return fail("errors.notFound");
   await db.fileUpload.delete({ where: { id: file.id } });
-  await deleteStoredFile(file.storedName);
   return { ok: true };
 }
 
@@ -185,9 +184,7 @@ export async function deleteDraftAction(orderId: string): Promise<ActionResult> 
   const user = await requireUser();
   const order = await ownDraft(user.id, orderId);
   if (!order) return fail("errors.notFound");
-  const files = await db.fileUpload.findMany({ where: { orderId } });
-  await db.order.delete({ where: { id: orderId } });
-  await Promise.all(files.map((f) => deleteStoredFile(f.storedName)));
+  await db.order.delete({ where: { id: orderId } }); // cascades to its files and their blobs
   return { ok: true, message: "success.deleted", redirect: "/dashboard/orders" };
 }
 

@@ -9,7 +9,7 @@ export default async function AdminCustomers({ searchParams }: { searchParams: P
   const { d } = await getI18n();
   const query = q?.trim().slice(0, 80);
   const users = await db.user.findMany({
-    where: query ? { OR: [{ email: { contains: query } }, { firstName: { contains: query } }, { lastName: { contains: query } }] } : {},
+    where: query ? { OR: [{ email: { contains: query, mode: "insensitive" } }, { firstName: { contains: query, mode: "insensitive" } }, { lastName: { contains: query, mode: "insensitive" } }] } : {},
     orderBy: { createdAt: "desc" },
     take: 200,
     include: { membership: true, _count: { select: { orders: { where: { status: { not: "DRAFT" } } } } }, payments: { where: { status: "SUCCEEDED" }, select: { amountGel: true } } },

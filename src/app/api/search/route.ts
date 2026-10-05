@@ -17,12 +17,12 @@ export async function GET(req: NextRequest) {
   const base = admin ? "/admin" : "/dashboard";
 
   const [orders, requests, websites, tickets, customers] = await Promise.all([
-    db.order.findMany({ where: { ...own, OR: [{ number: { contains: q } }, { brandName: { contains: q } }] }, take: 5 }),
-    db.modificationRequest.findMany({ where: { ...own, OR: [{ number: { contains: q } }, { title: { contains: q } }] }, take: 5 }),
-    db.website.findMany({ where: { ...own, OR: [{ name: { contains: q } }, { url: { contains: q } }] }, take: 5 }),
-    db.supportTicket.findMany({ where: { ...own, OR: [{ number: { contains: q } }, { subject: { contains: q } }] }, take: 5 }),
+    db.order.findMany({ where: { ...own, OR: [{ number: { contains: q, mode: "insensitive" } }, { brandName: { contains: q, mode: "insensitive" } }] }, take: 5 }),
+    db.modificationRequest.findMany({ where: { ...own, OR: [{ number: { contains: q, mode: "insensitive" } }, { title: { contains: q, mode: "insensitive" } }] }, take: 5 }),
+    db.website.findMany({ where: { ...own, OR: [{ name: { contains: q, mode: "insensitive" } }, { url: { contains: q, mode: "insensitive" } }] }, take: 5 }),
+    db.supportTicket.findMany({ where: { ...own, OR: [{ number: { contains: q, mode: "insensitive" } }, { subject: { contains: q, mode: "insensitive" } }] }, take: 5 }),
     admin
-      ? db.user.findMany({ where: { OR: [{ email: { contains: q } }, { firstName: { contains: q } }, { lastName: { contains: q } }] }, take: 5 })
+      ? db.user.findMany({ where: { OR: [{ email: { contains: q, mode: "insensitive" } }, { firstName: { contains: q, mode: "insensitive" } }, { lastName: { contains: q, mode: "insensitive" } }] }, take: 5 })
       : Promise.resolve([]),
   ]);
 
