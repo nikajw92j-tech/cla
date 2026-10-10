@@ -10,3 +10,6 @@ prisma/*.db-journal
 uploads/*
 !uploads/.gitkeep
 .next-dev.log
+
+.vercel
+.env*
