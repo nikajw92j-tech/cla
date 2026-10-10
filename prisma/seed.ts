@@ -131,7 +131,15 @@ async function main() {
     update: {},
   });
 
-  // Demo customer
+  await db.discountCode.upsert({ where: { code: "WELCOME10" }, create: { code: "WELCOME10", description: "10% off your first website", type: "PERCENT", value: 10, appliesTo: "ORDER" }, update: {} });
+  await db.discountCode.upsert({ where: { code: "PRO50" }, create: { code: "PRO50", description: "50 GEL off for Pro members", type: "FIXED", value: 50, appliesTo: "ORDER", proOnly: true }, update: {} });
+
+  // Demo customer (opt-in, so production starts empty)
+  if (process.env.SEED_DEMO !== "true") {
+    console.log("✔ Seed complete (no demo customer; set SEED_DEMO=true to add one)");
+    console.log(`  Admin:    ${adminEmail} / ${process.env.ADMIN_PASSWORD || "Admin12345!"}`);
+    return;
+  }
   const demoEmail = "demo@nexora.dev";
   if (await db.user.findUnique({ where: { email: demoEmail } })) {
     console.log("Demo data already present — skipping demo customer.");
@@ -298,9 +306,6 @@ async function main() {
     ["proActivated", {}, "/dashboard/pro", -12, true],
   ];
   for (const [kind, params, link, at, read] of notifs) await db.notification.create({ data: { userId: demo.id, kind, params: JSON.stringify(params), link, createdAt: days(at), readAt: read ? days(at) : null } });
-
-  await db.discountCode.upsert({ where: { code: "WELCOME10" }, create: { code: "WELCOME10", description: "10% off your first website", type: "PERCENT", value: 10, appliesTo: "ORDER" }, update: {} });
-  await db.discountCode.upsert({ where: { code: "PRO50" }, create: { code: "PRO50", description: "50 GEL off for Pro members", type: "FIXED", value: 50, appliesTo: "ORDER", proOnly: true }, update: {} });
 
   console.log("✔ Seed complete");
   console.log(`  Admin:    ${adminEmail} / ${process.env.ADMIN_PASSWORD || "Admin12345!"}`);

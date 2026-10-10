@@ -19,7 +19,7 @@ Generate a secret: `node -e "console.log(require('crypto').randomBytes(48).toStr
 | Account | Email | Password |
 |---|---|---|
 | Admin | `nikajw92j@gmail.com` | `Admin12345!` (from `.env`) |
-| Demo customer (Pro, 3 of 5 credits left) | `demo@nexora.dev` | `Demo12345!` |
+| Demo customer (Pro, 3 of 5 credits left; only with `SEED_DEMO="true"`) | `demo@nexora.dev` | `Demo12345!` |
 
 Seeded coupon codes: `WELCOME10` (10% off orders) and `PRO50` (50 ₾ off, Pro only).
 
