@@ -2,21 +2,84 @@ import "server-only";
 import { db } from "@/lib/db";
 import { notify, logActivity } from "@/lib/notify";
 import { getSettings } from "@/lib/settings";
-import { refNumber } from "@/lib/utils";
+import { appUrl, refNumber } from "@/lib/utils";
+import { env } from "@/lib/env";
+import { getLocale } from "@/lib/i18n/server";
+import { bogConfigured, createBogOrder, getBogReceipt, type BogReceipt } from "@/lib/bog";
 
 /**
  * Payment provider abstraction.
- * The built-in "test" provider sends the customer to /checkout/[id], a hosted-checkout
- * simulator. To go live, implement `createCheckout` against your gateway (BOG, TBC, Stripe…),
- * redirect to its URL and call `confirmPayment` from the signed webhook in
- * src/app/api/payments/webhook/route.ts. Card data never touches this app.
+ * With BOG_CLIENT_ID / BOG_CLIENT_SECRET set, card payments go to Bank of Georgia's hosted
+ * payment page and are confirmed by its signed callback (src/app/api/payments/bog/callback).
+ * Without them, the "test" provider sends the customer to /checkout/[id], a simulator that is
+ * disabled in production unless PAYMENTS_TEST_MODE=true. Card data never touches this app.
  */
+export const testCheckoutEnabled = !bogConfigured && (!env.isProd || process.env.PAYMENTS_TEST_MODE === "true");
+
 export const paymentProvider = {
-  name: "test",
+  name: bogConfigured ? "bog" : "test",
   async createCheckout(paymentId: string) {
+    if (bogConfigured) {
+      const payment = await db.payment.findUniqueOrThrow({ where: { id: paymentId }, include: { invoice: true } });
+      const order = await createBogOrder({
+        externalOrderId: payment.id,
+        amountGel: payment.amountGel,
+        description: payment.invoice?.number ?? payment.purpose,
+        callbackUrl: appUrl("/api/payments/bog/callback"),
+        successUrl: appUrl(`/api/payments/bog/return?payment=${payment.id}`),
+        failUrl: appUrl(`/api/payments/bog/return?payment=${payment.id}`),
+        language: (await getLocale()) === "ka" ? "ka" : "en",
+      });
+      await db.payment.update({ where: { id: payment.id }, data: { providerRef: order.id } });
+      return { url: order.redirectUrl };
+    }
+    if (!testCheckoutEnabled) throw new Error("Card payments are not configured: set BOG_CLIENT_ID and BOG_CLIENT_SECRET");
     return { url: `/checkout/${paymentId}` };
   },
 };
+
+/** Where the customer lands after paying (or abandoning) a payment. */
+export function paymentReturnPath(payment: { purpose: string; orderId: string | null; requestId: string | null }, succeeded: boolean) {
+  if (payment.purpose === "PRO") return succeeded ? "/dashboard/pro?activated=1" : "/dashboard/pro";
+  if (payment.purpose === "ORDER") return `/dashboard/orders/${payment.orderId}${succeeded ? "?success=1" : ""}`;
+  return `/dashboard/requests/${payment.requestId}${succeeded ? "?new=1" : ""}`;
+}
+
+/**
+ * Applies a BOG order's status to our payment. `receipt` must come from a verified callback or
+ * from the receipt API, never from the browser. Returns the payment's resulting status.
+ */
+export async function applyBogReceipt(receipt: BogReceipt) {
+  const paymentId = receipt.external_order_id;
+  if (!paymentId) return null;
+  const payment = await db.payment.findUnique({ where: { id: paymentId } });
+  if (!payment) return null;
+
+  const status = receipt.order_status.key;
+  if (status === "completed") {
+    const paid = Number(receipt.purchase_units?.transfer_amount ?? receipt.purchase_units?.request_amount);
+    if (!(paid >= payment.amountGel)) {
+      console.error(`BOG order ${receipt.order_id}: paid ${paid} GEL, expected ${payment.amountGel} for payment ${payment.id}`);
+      return payment.status;
+    }
+    await confirmPayment(payment.id, receipt.order_id);
+    return "SUCCEEDED";
+  }
+  // A declined attempt only fails the payment if it is the latest checkout session for it.
+  if (status === "rejected" && payment.providerRef === receipt.order_id) {
+    await failPayment(payment.id);
+    return "FAILED";
+  }
+  return payment.status;
+}
+
+/** Pulls the latest status of a payment's BOG order (used when the customer returns from the bank). */
+export async function syncBogPayment(paymentId: string) {
+  const payment = await db.payment.findUnique({ where: { id: paymentId } });
+  if (!payment?.providerRef || !bogConfigured) return payment?.status ?? null;
+  if (payment.status !== "PENDING") return payment.status;
+  return applyBogReceipt(await getBogReceipt(payment.providerRef));
+}
 
 type Purpose = "ORDER" | "MODIFICATION" | "PRO";
 
@@ -66,7 +129,8 @@ export async function createPayment(input: {
 /** Idempotently marks a payment as succeeded and fulfils what it paid for. */
 export async function confirmPayment(paymentId: string, providerRef?: string) {
   const { count } = await db.payment.updateMany({
-    where: { id: paymentId, status: "PENDING" },
+    // FAILED is included so money that arrives after a declined attempt is never ignored.
+    where: { id: paymentId, status: { in: ["PENDING", "FAILED"] } },
     data: { status: "SUCCEEDED", paidAt: new Date(), providerRef },
   });
   if (count === 0) return false; // already processed

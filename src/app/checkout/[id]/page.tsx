@@ -9,6 +9,7 @@ import { Money, T } from "@/components/ui/misc";
 import { ButtonLink } from "@/components/ui/button";
 import { ActionButton } from "@/components/dashboard/action-button";
 import { completeTestPaymentAction } from "@/app/actions/account";
+import { testCheckoutEnabled } from "@/lib/payments";
 
 export const metadata: Metadata = { title: "Checkout", robots: { index: false } };
 
@@ -17,6 +18,7 @@ export const metadata: Metadata = { title: "Checkout", robots: { index: false } 
  * In production this page is replaced by your gateway's hosted payment page.
  */
 export default async function CheckoutPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ status?: string }> }) {
+  if (!testCheckoutEnabled) notFound();
   const { id } = await params;
   const { status } = await searchParams;
   const user = await requireUser();

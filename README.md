@@ -49,14 +49,21 @@ so you can click the links during development.
 - Language and currency are saved in cookies (and on the user's profile). Prices are stored in GEL and converted
   using exchange rates set in **Admin → Packages & Prices**. Converted amounts are labeled as approximate.
 
-### Payments ⚠️
-`src/lib/payments.ts` defines a `paymentProvider`. The bundled **test provider** sends customers to `/checkout/[id]`,
-a clearly labeled test-mode page where they approve or decline the payment. **No real money moves.** Before going live:
+### Payments (Bank of Georgia)
+Card payments go through Bank of Georgia's online payments API (`src/lib/bog.ts`). Set `BOG_CLIENT_ID` and
+`BOG_CLIENT_SECRET` (from BOG, per business) and `APP_URL` (public https URL). The flow:
 
-1. Implement `createCheckout()` against your gateway (e.g. BOG, TBC Pay, Stripe) and return its hosted-checkout URL.
-2. Point the gateway's webhook at `POST /api/payments/webhook` and set `PAYMENT_WEBHOOK_SECRET`.
-   The handler verifies an HMAC-SHA256 signature and calls `confirmPayment()`, which is idempotent.
-3. Remove the `/checkout/[id]` simulator.
+1. `paymentProvider.createCheckout()` creates a BOG order (amount in GEL) and redirects the customer to BOG's payment page.
+2. BOG POSTs the result to `/api/payments/bog/callback`. The `Callback-Signature` (SHA256withRSA) is verified
+   on the raw body, then `confirmPayment()` (idempotent) fulfils the order / Pro / modification.
+3. The customer returns via `/api/payments/bog/return`, which re-reads the status from BOG's receipt API, so a
+   delayed or missed callback still gets applied.
+
+Test first with `BOG_ENV="sandbox"`, sandbox credentials and the
+[test cards](https://api.bog.ge/docs/sandbox/payments/test-cards). For live payments remove `BOG_ENV` and use live credentials.
+
+Without BOG credentials, card payments use the `/checkout/[id]` simulator (**no real money moves**). It is
+disabled in production unless `PAYMENTS_TEST_MODE="true"`.
 
 Bank transfers create a pending payment with an invoice. An admin marks it paid in **Admin → Payments**.
 Pro renewals are currently one paid 30-day period per checkout. Recurring billing needs your gateway's subscription API.

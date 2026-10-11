@@ -7,7 +7,7 @@ import { requireUser, destroySession, isProActive } from "@/lib/auth/session";
 import { changePasswordSchema, profileSchema, reviewSchema } from "@/lib/validation";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { filesFrom, saveFiles, validateFiles, UploadError } from "@/lib/uploads";
-import { createPayment, confirmPayment, failPayment, paymentProvider } from "@/lib/payments";
+import { createPayment, confirmPayment, failPayment, paymentProvider, paymentReturnPath, testCheckoutEnabled } from "@/lib/payments";
 import { getCurrency } from "@/lib/prefs";
 import { getSettings } from "@/lib/settings";
 import { notify } from "@/lib/notify";
@@ -122,6 +122,7 @@ export async function resumeProAction(): Promise<ActionResult> {
 
 /** Resolves a hosted-checkout session in test mode. Only the payment's owner can act on it. */
 export async function completeTestPaymentAction(paymentId: string, outcome: "approve" | "decline"): Promise<ActionResult> {
+  if (!testCheckoutEnabled) return fail("errors.notFound");
   const user = await requireUser();
   const payment = await db.payment.findFirst({ where: { id: paymentId, userId: user.id } });
   if (!payment || payment.status !== "PENDING") return fail("errors.notFound");
@@ -130,13 +131,7 @@ export async function completeTestPaymentAction(paymentId: string, outcome: "app
     return { ok: true, redirect: `/checkout/${paymentId}?status=failed` };
   }
   await confirmPayment(paymentId, `test_${Date.now()}`);
-  const next =
-    payment.purpose === "PRO"
-      ? "/dashboard/pro?activated=1"
-      : payment.purpose === "ORDER"
-        ? `/dashboard/orders/${payment.orderId}?success=1`
-        : `/dashboard/requests/${payment.requestId}?new=1`;
-  return { ok: true, redirect: next };
+  return { ok: true, redirect: paymentReturnPath(payment, true) };
 }
 
 export async function resumePaymentAction(paymentId: string): Promise<ActionResult> {
