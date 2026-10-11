@@ -7,7 +7,7 @@ import { requireUser, destroySession, isProActive } from "@/lib/auth/session";
 import { changePasswordSchema, profileSchema, reviewSchema } from "@/lib/validation";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { filesFrom, saveFiles, validateFiles, UploadError } from "@/lib/uploads";
-import { createPayment, confirmPayment, failPayment, paymentProvider, paymentReturnPath, testCheckoutEnabled } from "@/lib/payments";
+import { createPayment, confirmPayment, failPayment, startCheckout, paymentReturnPath, testCheckoutEnabled } from "@/lib/payments";
 import { getCurrency } from "@/lib/prefs";
 import { getSettings } from "@/lib/settings";
 import { notify } from "@/lib/notify";
@@ -99,7 +99,8 @@ export async function subscribeProAction(): Promise<ActionResult> {
     rate: currency === "GEL" ? 1 : settings.rates[currency],
     items: [{ label: "pro:monthly", amountGel: settings.pro.priceGel }],
   });
-  const { url } = await paymentProvider.createCheckout(payment.id);
+  const url = await startCheckout(payment.id);
+  if (!url) return fail("errors.paymentUnavailable");
   return { ok: true, redirect: url };
 }
 
@@ -139,7 +140,8 @@ export async function resumePaymentAction(paymentId: string): Promise<ActionResu
   const payment = await db.payment.findFirst({ where: { id: paymentId, userId: user.id, status: { in: ["PENDING", "FAILED"] } } });
   if (!payment) return fail("errors.notFound");
   if (payment.status === "FAILED") await db.payment.update({ where: { id: payment.id }, data: { status: "PENDING" } });
-  const { url } = await paymentProvider.createCheckout(payment.id);
+  const url = await startCheckout(payment.id);
+  if (!url) return fail("errors.paymentUnavailable");
   return { ok: true, redirect: url };
 }
 

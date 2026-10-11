@@ -429,6 +429,7 @@ const en = {
   },
   errors: {
     generic: "Something went wrong. Please try again.",
+    paymentUnavailable: "Card payment is unavailable right now. Please try again later or pay by bank transfer.",
     checkForm: "Please check the highlighted fields.",
     required: "This field is required.",
     invalid: "This value doesn't look right.",

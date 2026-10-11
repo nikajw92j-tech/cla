@@ -7,7 +7,7 @@ import { requireUser } from "@/lib/auth/session";
 import { orderBriefSchema } from "@/lib/validation";
 import { FEATURES, PACKAGE_SLUGS, STYLES, WEBSITE_TYPES, isOneOf } from "@/lib/catalog";
 import { quoteOrder, type OrderQuote } from "@/lib/pricing";
-import { createPayment, confirmPayment, paymentProvider } from "@/lib/payments";
+import { createPayment, confirmPayment, startCheckout } from "@/lib/payments";
 import { filesFrom, saveFiles, validateFiles, UploadError } from "@/lib/uploads";
 import { notify, logActivity } from "@/lib/notify";
 import { getCurrency } from "@/lib/prefs";
@@ -174,7 +174,8 @@ export async function submitOrderAction(orderId: string, input: { method: string
     return { ok: true, data: {} };
   }
   if (input.method === "CARD") {
-    const { url } = await paymentProvider.createCheckout(payment.id);
+    const url = await startCheckout(payment.id);
+    if (!url) return fail("errors.paymentUnavailable");
     return { ok: true, data: { checkoutUrl: url } };
   }
   return { ok: true, data: {} };
@@ -194,6 +195,7 @@ export async function retryOrderPaymentAction(orderId: string): Promise<ActionRe
   const payment = await db.payment.findFirst({ where: { orderId, userId: user.id, status: { in: ["PENDING", "FAILED"] } }, orderBy: { createdAt: "desc" } });
   if (!payment) return fail("errors.notFound");
   if (payment.status === "FAILED") await db.payment.update({ where: { id: payment.id }, data: { status: "PENDING", method: "CARD" } });
-  const { url } = await paymentProvider.createCheckout(payment.id);
+  const url = await startCheckout(payment.id);
+  if (!url) return fail("errors.paymentUnavailable");
   return { ok: true, redirect: url };
 }

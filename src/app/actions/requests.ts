@@ -5,7 +5,7 @@ import { fail, formObject, zodFail, type ActionResult } from "@/lib/action";
 import { requireUser } from "@/lib/auth/session";
 import { modRequestSchema } from "@/lib/validation";
 import { quoteModification } from "@/lib/pricing";
-import { createPayment, paymentProvider } from "@/lib/payments";
+import { createPayment, startCheckout } from "@/lib/payments";
 import { filesFrom, saveFiles, validateFiles, UploadError } from "@/lib/uploads";
 import { notify, logActivity } from "@/lib/notify";
 import { getCurrency } from "@/lib/prefs";
@@ -89,7 +89,8 @@ export async function createModRequestAction(fd: FormData): Promise<ActionResult
       discountGel,
       items: [{ label: `modification:${request.number}`, amountGel: quote.priceGel }],
     });
-    const { url } = await paymentProvider.createCheckout(payment.id);
+    const url = await startCheckout(payment.id);
+    if (!url) return fail("errors.paymentUnavailable");
     return { ok: true, message: "success.requestSubmitted", redirect: url };
   }
   return { ok: true, message: "success.requestSubmitted", redirect: `/dashboard/requests/${request.id}?new=1` };

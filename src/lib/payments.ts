@@ -38,6 +38,16 @@ export const paymentProvider = {
   },
 };
 
+/** Starts a hosted checkout; returns null (and logs why) if card payments are unavailable right now. */
+export async function startCheckout(paymentId: string): Promise<string | null> {
+  try {
+    return (await paymentProvider.createCheckout(paymentId)).url;
+  } catch (e) {
+    console.error(`Checkout for payment ${paymentId} failed`, e);
+    return null;
+  }
+}
+
 /** Where the customer lands after paying (or abandoning) a payment. */
 export function paymentReturnPath(payment: { purpose: string; orderId: string | null; requestId: string | null }, succeeded: boolean) {
   if (payment.purpose === "PRO") return succeeded ? "/dashboard/pro?activated=1" : "/dashboard/pro";
